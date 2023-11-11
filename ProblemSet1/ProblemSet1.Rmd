@@ -1,0 +1,745 @@
+---
+title: "ProblemSet1"
+author: "Diogo Alexandre Alonso De Freitas"
+date: "2023-10-02"
+output:
+  prettydoc::html_pretty:
+    theme: hpstr
+    highlight: github
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#### Biblioteca
+
+```{r}
+rm(list=ls(all=TRUE))
+pacman::p_load(ggplot2, e1071, tidyr)
+```
+
+
+## Exercicio 1.
+Pretende-se que gere 10.000 números pseudo-aleatórios provenientes da distribuição triangular:
+
+```{r}
+# Número de NPA desejados
+n <- 10000
+
+# Seed do trabalho
+set.seed(123)
+```
+
+### (b) Crie uma função de raiz para definir a distribuição triangular. Note que a distribuição triangular é definida por três parâmetros: min, o vértice inferior esquerdo do triângulo, max, o vértice inferior direito, e mode, o vértice superior. A escolha de valores para os parâmetros é discricionária.
+
+```{r}
+# Função para calcular a densidade da distribuição triangular
+densidade_triangular <- function(x, min, max, mode) {
+  densidade <- ifelse(x >= min & x <= mode, 2 * (x - min) / ((max - min) * (mode - min)),
+                      ifelse(x > mode & x <= max, 2 * (max - x) / ((max - min) * (max - mode)), 0))
+  return(densidade)
+}
+```
+
+$$
+\begin{align*}
+f(x) = 
+\begin{cases} 
+\frac{2(x - a)}{(b - a)(c - a)} & \text{para } a \leq x \leq c \\
+\frac{2(b - x)}{(b - a)(b - c)} & \text{para } c < x \leq b \\
+0 & \text{para } x < a \text{ ou } x > b 
+\end{cases}
+\end{align*}
+$$
+
+Acima, podemos visualizar uma função densidade da distribuição triangular criada de raiz
+
+### (a) Recorra ao método da aceitação-rejeição.
+
+```{r}
+gerar_amostras_triangular <- function(n, min, max, mode) {
+  c <- densidade_triangular(mode, min, max, mode)
+  amostras <- numeric(n)
+  count <- 1
+  
+  while (count <= n) {
+    gx <- runif(1, min, max)
+    candidato <- runif(1, min, max)
+    u <- runif(1)
+    densidade_candidato <- densidade_triangular(candidato, min, max, mode)
+    
+    if (u <= densidade_candidato / (c * gx)) {
+      amostras[count] <- candidato
+      count <- count + 1
+    }
+  }
+  
+  return(amostras)
+}
+
+# DataFrame para comparação dos resultados
+triangComp <- data.frame(ModaPeq = numeric(10000), ModaMed = numeric(10000), ModaAlt = numeric(10000))
+```
+
+Neste método de aceitação rejeição:
+  O c corresponde a um valor fixo, que tem como argumento a moda usada para a criação da função densidade triangular
+  gx é uma uniforme, com o mesmo intervalo que a triangular
+  u, também é uma uniforme, entre o e 1
+
+### (c) Os resultados devem ser apresentados em matrix ou data.frame, para além de um output gráfico simples que permita visualizar a densidade aproximada dos números simulados.
+
+#### Histograma 1
+
+```{r}
+# Parâmetros da distribuição triangular
+min <- 0
+max <- 50
+mode <- 5
+
+# Número de amostras desejadas
+n <- 10000
+
+# Gere as amostras usando o método da aceitação-rejeição
+amostras <- gerar_amostras_triangular(n, min, max, mode)
+
+# DataFrame com todos os valores das diferentes distribuições
+triangComp$ModaPeq <- amostras
+
+grafico <- hist(triangComp$ModaPeq, prob = TRUE, col = "lightblue", main = "Distribuição Triangular Aproximada", xlab = "Valor", plot = FALSE)
+pontos <- data.frame(x = c(min, mode, max), y = c(0, max(grafico$counts), 0))
+```
+
+```{r}
+# Calcular o número de intervalos usando a regra de Sturges
+num_intervalos <- 1 + log2(length(triangComp$ModaPeq))
+
+# Calcular as densidades nos vértices do triângulo
+densidades_vertices <- densidade_triangular(pontos$x, min, max, mode)
+
+# Criar um data.frame para os pontos do triângulo
+triangulo <- data.frame(x = c(min, pontos$x, max), y = c(0, densidades_vertices, 0))
+
+# Criar o gráfico usando ggplot2 sem conectar a base do triângulo
+ggplot(data = triangComp, aes(x = ModaPeq)) +
+  geom_histogram(binwidth = diff(range(triangComp$ModaPeq)) / num_intervalos, fill = "#4682B4", color = "black", aes(y = after_stat(density)), alpha = 1) +
+  geom_density(color = "black", size = 1.2) +
+  geom_polygon(data = triangulo, aes(x = x, y = y), fill = "#DC143C", color = "red", linewidth = .8, alpha = 0.3) +
+  labs(title = "Distribuição Triangular Aproximada",
+       x = "Valor",
+       y = "Densidade") +
+  theme_minimal()
+```
+
+Podemos visuaalizar que o "pico" do triangulo está para a esquerda, pois, o valor da moda é próximo do minimo
+
+```{r}
+Candidatos_Aceites_Rejeitados <- function(n, min, max, mode) {
+  x <- numeric(n)
+  accepted <- logical(n)
+  y <- numeric(n)
+  i <- 1
+  while (i <= n) {
+    x_candidate <- runif(1, min, max)
+    y_candidate <- runif(1, 0, 1)  
+    c_aux <- densidade_triangular(mode,min,max,mode)/dunif(mode,min,max)
+    if (y_candidate <= densidade_triangular(x_candidate, min, max, mode)/(c_aux*dunif(x_candidate,min,max))) {
+      x[i] <- x_candidate
+      y[i] <- y_candidate
+      accepted[i] <- TRUE
+      i <- i + 1
+    }
+    else {
+      x[i] <- x_candidate
+      y[i] <- y_candidate
+      accepted[i] <- FALSE
+      i <- i+1
+    }
+  }
+  data.frame(x, y, accepted)
+}
+```
+
+```{r}
+sample_data <- Candidatos_Aceites_Rejeitados(n, min, max, mode)
+ggplot(sample_data, aes(x = x, y = y, color = accepted)) +
+  geom_point(size = 1, alpha = 0.7, shape = 16) +
+  scale_color_manual(values = c("FALSE" = "#FF5733", "TRUE" = "#33FF57")) +
+  labs(
+    title = "Triangular Distribution Overlay with Highlighted Accepted Points",
+    x = "Value",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 15, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 10),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    panel.grid.major = element_line(color = "#EAEAEA", size = 0.5),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+Este gráfico apresenta todos os candidatos, tanto os aceites como os rejeitados
+
+#### Histograma 2
+
+```{r}
+# Parâmetros da distribuição triangular
+min <- 0
+max <- 50
+mode <- 25
+
+# Número de amostras desejadas
+n <- 10000
+
+# Gere as amostras usando o método da aceitação-rejeição
+amostras <- gerar_amostras_triangular(n, min, max, mode)
+
+# DataFrame com todos os valores das diferentes distribuições
+triangComp$ModaMed <- amostras
+
+grafico <- hist(triangComp$ModaMed, prob = TRUE, col = "lightblue", main = "Distribuição Triangular Aproximada", xlab = "Valor", plot = FALSE)
+pontos <- data.frame(x = c(min, mode, max), y = c(0, max(grafico$counts), 0))
+```
+
+```{r}
+# Calcular o número de intervalos usando a regra de Sturges
+num_intervalos <- 1 + log2(length(triangComp$ModaMed))
+
+# Calcular as densidades nos vértices do triângulo
+densidades_vertices <- densidade_triangular(pontos$x, min, max, mode)
+
+# Criar um data.frame para os pontos do triângulo
+triangulo <- data.frame(x = c(min, pontos$x, max), y = c(0, densidades_vertices, 0))
+
+# Criar o gráfico usando ggplot2 sem conectar a base do triângulo
+ggplot(data = triangComp, aes(x = ModaMed)) +
+  geom_histogram(binwidth = diff(range(triangComp$ModaMed)) / num_intervalos, fill = "#4682B4", color = "black", aes(y = after_stat(density)), alpha = 1) +
+  geom_density(color = "black", size = 1.2) +
+  geom_polygon(data = triangulo, aes(x = x, y = y), fill = "#DC143C", color = "red", size = .8, alpha = 0.3) +
+  labs(title = "Distribuição Triangular Aproximada",
+       x = "Valor",
+       y = "Densidade") +
+  theme_minimal()
+```
+
+Como a moda está no centro do intervalor, o pico também se encontra no centro, parecendo um triangulo isósceles
+
+```{r}
+sample_data <- Candidatos_Aceites_Rejeitados(n, min, max, mode)
+ggplot(sample_data, aes(x = x, y = y, color = accepted)) +
+  geom_point(size = 1, alpha = 0.7, shape = 16) +
+  scale_color_manual(values = c("FALSE" = "#FF5733", "TRUE" = "#33FF57")) +
+  labs(
+    title = "Triangular Distribution Overlay with Highlighted Accepted Points",
+    x = "Value",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 15, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 10),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    panel.grid.major = element_line(color = "#EAEAEA", size = 0.5),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+#### Histograma 3
+
+```{r}
+# Parâmetros da distribuição triangular
+min <- 0
+max <- 50
+mode <- 45
+
+# Número de amostras desejadas
+n <- 10000
+
+# Gere as amostras usando o método da aceitação-rejeição
+amostras <- gerar_amostras_triangular(n, min, max, mode)
+
+# DataFrame com todos os valores das diferentes distribuições
+triangComp$ModaAlt <- amostras
+
+grafico <- hist(triangComp$ModaAlt, prob = TRUE, col = "lightblue", main = "Distribuição Triangular Aproximada", xlab = "Valor", plot = FALSE)
+pontos <- data.frame(x = c(min, mode, max), y = c(0, max(grafico$counts), 0))
+```
+
+```{r}
+# Calcular o número de intervalos usando a regra de Sturges
+num_intervalos <- 1 + log2(length(triangComp$ModaAlt))
+
+# Calcular as densidades nos vértices do triângulo
+densidades_vertices <- densidade_triangular(pontos$x, min, max, mode)
+
+# Criar um data.frame para os pontos do triângulo
+triangulo <- data.frame(x = c(min, pontos$x, max), y = c(0, densidades_vertices, 0))
+
+# Criar o gráfico usando ggplot2 sem conectar a base do triângulo
+ggplot(data = triangComp, aes(x = ModaAlt)) +
+  geom_histogram(binwidth = diff(range(triangComp$ModaAlt)) / num_intervalos, fill = "#4682B4", color = "black", aes(y = after_stat(density)), alpha = 1) +
+  geom_density(color = "black", size = 1.2) +
+  geom_polygon(data = triangulo, aes(x = x, y = y), fill = "#DC143C", color = "red", size = .8, alpha = 0.3) +
+  labs(title = "Distribuição Triangular Aproximada",
+       x = "Valor",
+       y = "Densidade") +
+  theme_minimal()
+```
+
+Como a moda está próxima do valor máximo do intervalo, o "pico" encontra-se à direita
+
+```{r}
+sample_data <- Candidatos_Aceites_Rejeitados(n, min, max, mode)
+ggplot(sample_data, aes(x = x, y = y, color = accepted)) +
+  geom_point(size = 1, alpha = 0.7, shape = 16) +
+  scale_color_manual(values = c("FALSE" = "#FF5733", "TRUE" = "#33FF57")) +
+  labs(
+    title = "Triangular Distribution Overlay with Highlighted Accepted Points",
+    x = "Value",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 15, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 10),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    panel.grid.major = element_line(color = "#EAEAEA", size = 0.5),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank(),
+    legend.position = "bottom"
+  )
+
+```
+
+### DataFrame
+
+```{r}
+head(triangComp)
+```
+
+### JitterPlot
+
+```{r}
+# Use 50% dos dados
+set.seed(123) # Defina uma semente para reproducibilidade
+percentagem_dados <- 0.2
+indices_amostra <- sample(1:nrow(triangComp), size = round(percentagem_dados * nrow(triangComp)))
+
+# Crie um dataframe com a porcentagem selecionada dos dados
+dados_selecionados <- triangComp[indices_amostra, ]
+
+# Transforme os dados em um formato longo
+dados_selecionados_long <- gather(dados_selecionados, key = "Categoria", value = "Valor", ModaPeq, ModaMed, ModaAlt)
+
+# Crie um vetor de cores personalizadas
+cores <- c("ModaPeq" = "#66c2a5", "ModaMed" = "#fc8d62", "ModaAlt" = "#8da0cb")
+
+# Crie o jitter plot com cores personalizadas
+ggplot(dados_selecionados_long, aes(x = Categoria, y = Valor, color = Categoria)) +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.7, size = 3) +
+  scale_color_manual(values = cores) +
+  theme_minimal() +
+  labs(title = "Jitter Plot para ModaPeq, ModaMed e ModaAlt (20% dos Dados)",
+       x = "Categoria",
+       y = "Valor")
+
+```
+Os pontos correspondem aos pontos pertencentes de cada uma das distribuições
+Como já era esperado, quando a moda é alta, existe uma maior concentração dos pontos próximo ao máximo máximo e menor concentração próximo ao mínimo; quando é mediano, existe uma maior concentração a meio, e menor concentração nas pontas; quando é baixo, é o oposto do alto, maior concentração dos pontos ao pé do valor mínimo do intervalo e menor no valor máximo.
+
+#### Boxplot
+
+```{r}
+triangComp_long <- gather(triangComp, key = "Categoria", value = "Valor", ModaPeq, ModaMed, ModaAlt)
+
+# Criar um boxplot usando ggplot2
+ggplot(triangComp_long, aes(x = Categoria, y = Valor, fill = Categoria)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  theme_minimal() +
+  labs(title = "Boxplot para ModaPeq, ModaMed e ModaAlt",
+       x = "Categoria",
+       y = "Valor")
+```
+
+Este gráfico reforça as conclusões retiradas anteriormente.
+
+```{r}
+inicio <- 50
+fim <- 80
+
+# Defina cores atraentes e estilos de linha
+cores <- c("ModaPeq" = "#E41A1C", "ModaMed" = "#377EB8", "ModaAlt" = "#4DAF4A")
+
+# Crie o gráfico usando ggplot2 com cores e linhas estilizadas
+ggplot(data=triangComp[inicio:fim, ], aes(x=inicio:fim)) +
+  geom_line(aes(y = ModaPeq, color = "ModaPeq"), size = 1.5) +
+  geom_point(aes(y = ModaPeq, color = "ModaPeq"), size = 3) +
+  geom_line(aes(y = ModaMed, color = "ModaMed"), size = 1.5) +
+  geom_point(aes(y = ModaMed, color = "ModaMed"), size = 3) +
+  geom_line(aes(y = ModaAlt, color = "ModaAlt"), size = 1.5) +
+  geom_point(aes(y = ModaAlt, color = "ModaAlt"), size = 3) +
+  scale_color_manual(name = "Legendas", values = cores) +
+  scale_shape_manual(values = c(16, 17, 18)) +
+  theme_minimal() +
+  labs(title = "Pontos das 3 distribuições",
+       y = "Erro Padrão",
+       x = "Graus de Liberdade")
+
+```
+
+Neste gráfico, temos um intervalo dos pontos entre 50 e 80.
+Analisando com atenção, podemos visualizar, mais uma vez que correspondente à média escolhida, os pontos encontram-se mais concentrado aí. Apesar dessa concentração uma distribuição com moda baixa, por exemplo, também terá pontos altos e vice versa.
+
+## Exercicio 2. 
+Pretende-se que realize um estudo comparativo de dois estimadores para o coeficiente de assimetria de distribuições de probabilidade. Considere os estimadores s1 e s2 para a assimetria de uma população qualquer:
+
+$$s_1 = \frac{Q_3 + Q_1 - 2Q_2}{Q_3 - Q_1}$$
+
+$$s_1 = \frac{(\mu -v)}{E(|X-v|)}$$
+
+em que, na Equação 1, Qi representa o quartil respectivo e, na Equação 2, µ corresponde à média e ν corresponde à mediana.
+
+### (a) Gere, utilizando o gerador base do R para a distribuição t-student (rt()), e com set.seed(2023):
+
+```{r}
+# Definir a semente aleatória como 2023
+set.seed(2023)
+
+# Gerar 100 amostras de tamanho 20 da distribuição t de Student
+amostras_20 <- lapply(1:100, function(i) rt(20, df = 5))
+
+# Gerar 100 amostras de tamanho 100 da distribuição t de Student
+amostras_100 <- lapply(1:100, function(i) rt(100, df = 5))
+
+# Gerar 100 amostras de tamanho 1000 da distribuição t de Student
+amostras_1000 <- lapply(1:100, function(i) rt(1000, df = 5))
+```
+
+Para a escolha dos graus de liberdade, seria necessário escolher um valor que se situasse entre 3 e 30, pois abaixo de 3 a skewness não tem um valor definido, e acima de 30 aproxima-se de uma normal
+Foi escolhido aleatoriamente um número dentro desse intervalo, e escolheu-se o 5. 
+
+### (b) Obtenha, para cada amostra gerada e para cada estimador, a assimetria amostral (estimativa) correspondente.
+
+```{r}
+# Função para calcular o estimador s1 (Quantile-based measures)
+calcular_s1 <- function(amostra, num_amostra) {
+  Q1 <- quantile(amostra, 0.25)
+  Q2 <- median(amostra)
+  Q3 <- quantile(amostra, 0.75)
+  s1 <- (Q3 + Q1 - 2 * Q2) / (Q3 - Q1)
+  return(data.frame(Amostra = num_amostra, S1 = s1))
+}
+
+# Calcular s1 para amostras de tamanho 20
+s1_20 <- do.call(rbind, lapply(1:100, function(i) calcular_s1(amostras_20[[i]], i)))
+s1_20 <- data.frame(s1_20, row.names = NULL)
+mean(s1_20$S1)
+
+# Calcular s1 para amostras de tamanho 100
+s1_100 <- do.call(rbind, lapply(1:100, function(i) calcular_s1(amostras_100[[i]], i)))
+s1_100 <- data.frame(s1_100, row.names = NULL)
+mean(s1_100$S1)
+
+# Calcular s1 para amostras de tamanho 1000
+s1_1000 <- do.call(rbind, lapply(1:100, function(i) calcular_s1(amostras_1000[[i]], i)))
+s1_1000 <- data.frame(s1_1000, row.names = NULL)
+mean(s1_1000$S1)
+```
+
+```{r}
+s1 <- data.frame(Amostra = 1:nrow(s1_20), s1_20$S1, s1_100$S1, s1_1000$S1)
+s1
+```
+
+
+```{r}
+# Função para calcular o estimador s2 com número da amostra Groeneveld and (Meeden's coefficient)
+calcular_s2 <- function(amostra, num_amostra) {
+  media <- mean(amostra)
+  mediana <- median(amostra)
+  desvio_absoluto <- mean(abs(amostra - mediana))
+  s2 <- (media - mediana) / desvio_absoluto
+  return(data.frame(Amostra = num_amostra, S2 = s2))
+}
+
+# Calcular s2 para amostras de tamanho 20
+s2_20 <- do.call(rbind, lapply(1:100, function(i) calcular_s2(amostras_20[[i]], i)))
+s2_20 <- data.frame(s2_20, row.names = NULL)
+mean(s2_20$S2)
+
+# Calcular s2 para amostras de tamanho 100
+s2_100 <- do.call(rbind, lapply(1:100, function(i) calcular_s2(amostras_100[[i]], i)))
+s2_100 <- data.frame(s2_100, row.names = NULL)
+mean(s2_100$S2)
+
+# Calcular s2 para amostras de tamanho 1000
+s2_1000 <- do.call(rbind, lapply(1:100, function(i) calcular_s2(amostras_1000[[i]], i)))
+s2_1000 <- data.frame(s2_1000, row.names = NULL)
+mean(s2_1000$S2)
+```
+
+```{r}
+s2 <- data.frame(Amostra = 1:nrow(s2_20), s2_20$S2, s2_100$S2, s2_1000$S2)
+s2
+```
+
+### Tabela com todos os dados
+
+```{r}
+# Para s1
+s1_stats <- data.frame(
+  Coluna = c("s1_20.S1", "s1_100.S1", "s1_1000.S1"),
+  Max = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, max),
+  Min = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, min),
+  Media = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, mean),
+  Mediana = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, median),
+  Moda = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, function(x) {
+    moda <- as.numeric(names(sort(table(x), decreasing = TRUE)[1]))
+    if(length(moda) == length(x)) {
+      return("Nenhuma moda")
+    } else {
+      return(moda)
+    }
+  }),
+  DesvioPadrao = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, sd),
+  Variancia = apply(s1[, c("s1_20.S1", "s1_100.S1", "s1_1000.S1")], 2, var)
+)
+
+# Para s2
+s2_stats <- data.frame(
+  Coluna = c("s2_20.S2", "s2_100.S2", "s2_1000.S2"),
+  Max = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, max),
+  Min = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, min),
+  Media = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, mean),
+  Mediana = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, median),
+  Moda = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, function(x) {
+    moda <- as.numeric(names(sort(table(x), decreasing = TRUE)[1]))
+    if(length(moda) == length(x)) {
+      return("Nenhuma moda")
+    } else {
+      return(moda)
+    }
+  }),
+  DesvioPadrao = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, sd),
+  Variancia = apply(s2[, c("s2_20.S2", "s2_100.S2", "s2_1000.S2")], 2, var)
+)
+
+# Junta os dois dataframes
+combined_stats <- rbind(s1_stats, s2_stats)
+combined_stats$Coluna <- NULL
+combined_stats
+
+```
+
+A tabela acima demonstra várias estatisticas das amostras criadas anteriormente, analisando com atenção, podemos visualziar que, quanto maior o número de sub-amostras criados, mais próximo de 0 é a média (concluindo assim que gerar mais amostras contribui para que o estimador apresente valores melhores e não seja tão disperso)
+Também podemos retirar a informação de que o o segundo estimador é superior que o primeiro, pois, não só a média é mais próxima de 0 (que é o objetivo, pois a skewness da t.student é, teoricamente, 0) como também o seu desvio padrão é inferior, dando a entender que é menos disperso e mais conenctrado.
+Para uma melhor visualização, mais à frente será possível visualizar alguns gráficos.
+
+### (c) Recorrendo ao cálculo do erro-padrão e do erro quadrático médio, conclua pela sua preferência por um dos estimadores e comente o seu comportamento, em função da dimensão das amostras obtidas. Apresente os resultados num data.frame.
+
+### Erro padrão
+
+```{r}
+# Calcular o erro-padrão para s1 e s2 em diferentes tamanhos de amostra
+erro_padrao_s1_20 <- sd(s1_20$S1) / sqrt(20)
+erro_padrao_s1_100 <- sd(s1_100$S1) / sqrt(100)
+erro_padrao_s1_1000 <- sd(s1_1000$S1) / sqrt(1000)
+
+erro_padrao_s2_20 <- sd(s2_20$S2) / sqrt(20)
+erro_padrao_s2_100 <- sd(s2_100$S2) / sqrt(100)
+erro_padrao_s2_1000 <- sd(s2_1000$S2) / sqrt(1000)
+
+# Resultados
+cat("Erro-padrão para s1 com amostra de tamanho 20:", erro_padrao_s1_20, "\n")
+cat("Erro-padrão para s1 com amostra de tamanho 100:", erro_padrao_s1_100, "\n")
+cat("Erro-padrão para s1 com amostra de tamanho 1000:", erro_padrao_s1_1000, "\n")
+cat("Erro-padrão para s2 com amostra de tamanho 20:", erro_padrao_s2_20, "\n")
+cat("Erro-padrão para s2 com amostra de tamanho 100:", erro_padrao_s2_100, "\n")
+cat("Erro-padrão para s2 com amostra de tamanho 1000:", erro_padrao_s2_1000, "\n")
+```
+
+O erro padrão de s2 é inferior em todos os casos, demonstrando que s2 é superior (menor dispersão)
+É importante relembrar que se quer que seja zero, logo, se está próximo deste, com pouca dispersão, estamos presentes de um estimador de boa qualidade.
+
+### Erro quadrático médio (MSE)
+
+```{r}
+# Definir a skewness teórica
+skewness_real <- 0  # Para a distribuição t de Student, a skewness teórica é 0, pois é simétrica
+
+# Função para calcular o Erro Quadrático Médio (MSE)
+mse <- function(estimativas, valor_real) {
+  return(mean((estimativas - valor_real)^2))
+}
+
+# Calcular MSE para s1 e s2 em diferentes tamanhos de amostra
+mse_s1_20 <- mse(s1_20$S1, skewness_real)
+mse_s1_100 <- mse(s1_100$S1, skewness_real)
+mse_s1_1000 <- mse(s1_1000$S1, skewness_real)
+
+mse_s2_20 <- mse(s2_20$S2, skewness_real)
+mse_s2_100 <- mse(s2_100$S2, skewness_real)
+mse_s2_1000 <- mse(s2_1000$S2, skewness_real)
+
+# Imprimir os resultados
+cat("Erro Quadrático Médio (MSE) para s1 com amostra de tamanho 20:", mse_s1_20, "\n")
+cat("Erro Quadrático Médio (MSE) para s1 com amostra de tamanho 100:", mse_s1_100, "\n")
+cat("Erro Quadrático Médio (MSE) para s1 com amostra de tamanho 1000:", mse_s1_1000, "\n")
+cat("Erro Quadrático Médio (MSE) para s2 com amostra de tamanho 20:", mse_s2_20, "\n")
+cat("Erro Quadrático Médio (MSE) para s2 com amostra de tamanho 100:", mse_s2_100, "\n")
+cat("Erro Quadrático Médio (MSE) para s2 com amostra de tamanho 1000:", mse_s2_1000, "\n")
+
+```
+O s2 apresenta valores de MSE melhores que s1, pois, como estes são mais baixos, os valores de s2 estão mais próximos do valor real de skewness da t.student que é, teoricamente, 0.
+
+### BoxPlot
+
+```{r}
+# Organizar os dados usando a função gather do tidyr
+s1_long <- gather(s1, key = "Categoria", value = "Valor", -Amostra)
+
+# Criar um boxplot usando ggplot2
+ggplot(s1_long, aes(x = Categoria, y = Valor, fill = Categoria)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  theme_minimal() +
+  labs(title = "Boxplot para s1 em diferentes tamanhos de amostra",
+       x = "Categoria",
+       y = "Valor")
+```
+
+```{r}
+# Organizar os dados usando a função gather do tidyr
+s2_long <- gather(s2, key = "Categoria", value = "Valor", -Amostra)
+
+# Criar um boxplot usando ggplot2
+ggplot(s2_long, aes(x = Categoria, y = Valor, fill = Categoria)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("#66c2a5", "#fc8d62", "#8da0cb")) +
+  theme_minimal() +
+  labs(title = "Boxplot para s2 em diferentes tamanhos de amostra",
+       x = "Categoria",
+       y = "Valor")
+```
+
+```{r}
+# Criar um dataframe combinado para S1 e S2 com amostras de tamanho 20, 100 e 1000
+s1_s2 <- data.frame(Amostra = rep(1:100, times = 3),
+                    Tamanho = rep(c("20", "100", "1000"), each = 100),
+                    S1 = c(s1_20$S1, s1_100$S1, s1_1000$S1),
+                    S2 = c(s2_20$S2, s2_100$S2, s2_1000$S2))
+
+# Converter os dados para o formato longo
+s1_s2_long <- gather(s1_s2, key = "Variavel", value = "Valor", -Amostra, -Tamanho)
+
+# Criar boxplots lado a lado para S1 e S2 com amostras de diferentes tamanhos
+ggplot(data = s1_s2_long, aes(x = Variavel, y = Valor, fill = Variavel)) +
+  geom_boxplot(position = position_dodge(width = 0.8), width = 0.6) +
+  facet_wrap(~Tamanho, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Boxplots para S1 e S2 com diferentes tamanhos de amostra",
+       y = "Valor",
+       x = "Variavel")
+
+```
+
+```{r}
+# Criar um vetor de graus de liberdade
+df <- seq(1, 30, by = 1)  # Altere o intervalo e o incremento conforme necessário
+
+# Inicializar listas para armazenar os resultados
+erro_padrao_s1 <- numeric(length(df))
+erro_padrao_s2 <- numeric(length(df))
+
+# Loop para calcular o erro-padrão para s1 e s2 com base nos graus de liberdade
+for (i in 1:length(df)) {
+  # Gerar amostras de tamanho 1000 da distribuição t de Student com diferentes graus de liberdade
+  amostras <- lapply(1:100, function(j) rt(1000, df = df[i]))
+  
+  # Calcular s1 para as amostras
+  s1 <- do.call(rbind, lapply(1:100, function(j) calcular_s1(amostras[[j]], j)))
+  erro_padrao_s1[i] <- sd(s1$S1) / sqrt(1000)
+  
+  # Calcular s2 para as amostras
+  s2 <- do.call(rbind, lapply(1:100, function(j) calcular_s2(amostras[[j]], j)))
+  erro_padrao_s2[i] <- sd(s2$S2) / sqrt(1000)
+}
+
+# Criar um data frame com os resultados
+erro_padrao_df <- data.frame(Graus_Liberdade = df, Erro_Padrao_S1 = erro_padrao_s1, Erro_Padrao_S2 = erro_padrao_s2)
+
+# Imprimir o data frame
+erro_padrao_df
+
+# Criar um gráfico de linha para comparar s1 e s2 em função dos graus de liberdade
+ggplot(erro_padrao_df, aes(x = Graus_Liberdade)) +
+  geom_line(aes(y = Erro_Padrao_S1, color = "Erro Padrão S1")) +
+  geom_line(aes(y = Erro_Padrao_S2, color = "Erro Padrão S2")) +
+  scale_color_manual(values = c("Erro Padrão S1" = "blue", "Erro Padrão S2" = "red")) +
+  theme_minimal() +
+  labs(title = "Erro Padrão para s1 e s2 (Amostra de 1000)",
+       y = "Erro Padrão",
+       x = "Graus de Liberdade")
+
+```
+
+Quando os graus de liberdade são inferiores a 3, o s1 é melhor, mas para os restantes valores o s2 é melhor de forma fixa.
+É importante relembrar quue os valores dos graus de liberdade não faz sentido ser inferiora 3, pois a skewness não fica bem definida.
+
+```{r}
+# Inicializar listas para armazenar os resultados do MSE
+mse_s1 <- numeric(length(df))
+mse_s2 <- numeric(length(df))
+
+# Função para calcular o Erro Quadrático Médio (MSE)
+mse <- function(estimativas, valor_real) {
+  return(mean((estimativas - valor_real)^2))
+}
+
+# Loop para calcular o MSE para s1 e s2 com base nos graus de liberdade
+for (i in 1:length(df)) {
+  # Gerar amostras de tamanho 1000 da distribuição t de Student com diferentes graus de liberdade
+  amostras <- lapply(1:100, function(j) rt(1000, df = df[i]))
+  
+  # Calcular s1 para as amostras e calcular o MSE
+  s1 <- do.call(rbind, lapply(1:100, function(j) calcular_s1(amostras[[j]], j)))
+  mse_s1[i] <- mse(s1$S1, 0)  # 0 porque a skewness teórica da t de Student é 0
+  
+  # Calcular s2 para as amostras e calcular o MSE
+  s2 <- do.call(rbind, lapply(1:100, function(j) calcular_s2(amostras[[j]], j)))
+  mse_s2[i] <- mse(s2$S2, 0)  # 0 porque a skewness teórica da t de Student é 0
+}
+
+# Criar um data frame com os resultados do MSE
+mse_df <- data.frame(Graus_Liberdade = df, MSE_S1 = mse_s1, MSE_S2 = mse_s2)
+
+# Criar o gráfico de linhas para o Erro Quadrático Médio (MSE) de s1 e s2
+ggplot(data = mse_df, aes(x = Graus_Liberdade)) +
+  geom_line(aes(y = MSE_S1, color = "s1"), size = 1.2) +
+  geom_line(aes(y = MSE_S2, color = "s2"), size = 1.2) +
+  scale_color_manual(values = c("s1" = "blue", "s2" = "red")) +
+  theme_minimal() +
+  labs(title = "Erro Quadrático Médio (MSE) para s1 e s2",
+       x = "Graus de Liberdade",
+       y = "Erro Quadrático Médio (MSE)") +
+  theme(legend.title=element_blank())  # Remover o título da legenda
+```
+
+Quando os graus de liberdade são inferiores a 3, o s1 é melhor, mas para os restantes valores o s2 é melhor de forma fixa.
+É importante relembrar quue os valores dos graus de liberdade não faz sentido ser inferiora 3, pois a skewness não fica bem definida.
